@@ -1,53 +1,48 @@
-from flask import Flask, request, jsonify, send_file
-from yt_dlp import YoutubeDL
+from flask import Flask, request, jsonify
+import subprocess
 import os
-from uuid import uuid4
+import uuid
 
 app = Flask(__name__)
 
-DOWNLOAD_DIR = "downloads"
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+# Home route to prevent 404 on root path
+@app.route("/", methods=["GET"])
+def home():
+    return "✅ Flask YouTube Downloader Backend is Live!"
 
+# Download video route
 @app.route("/download", methods=["POST"])
 def download_video():
-    data = request.get_json()
-    url = data.get("url")
-    if not url:
-        return jsonify({"error": "No URL provided"}), 400
-
-    uid = str(uuid4())
-    output_path = os.path.join(DOWNLOAD_DIR, f"{uid}.%(ext)s")
-
     try:
-        ydl_opts = {
-            "format": "mp4",
-            "outtmpl": output_path,
-            "noplaylist": True,
-            "quiet": True,
-            "progress_hooks": [progress_hook],
-        }
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-        return jsonify({
-            "title": info.get("title"),
-            "filename": filename,
-            "download_url": f"/video/{os.path.basename(filename)}",
-            "thumbnail": info.get("thumbnail"),
-        })
+        data = request.get_json()
+        url = data.get("url")
+
+        if not url:
+            return jsonify({"error": "❌ No URL provided."}), 400
+
+        # Create a unique filename using UUID
+        filename = f"{uuid.uuid4()}.mp4"
+        output_path = os.path.join("downloads", filename)
+
+        # Create 'downloads' folder if not exists
+        os.makedirs("downloads", exist_ok=True)
+
+        # Use yt-dlp to download the video
+        result = subprocess.run([
+            "yt-dlp",
+            "-f", "best",
+            "-o", output_path,
+            url
+        ], capture_output=True, text=True)
+
+        if result.returncode != 0:
+            return jsonify({"error": "❌ Failed to fetch video.", "details": result.stderr}), 500
+
+        # Return the filename to the frontend
+        return jsonify({"success": True, "filename": filename})
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-def progress_hook(d):
-    if d['status'] == 'downloading':
-        print(f"Downloading: {d['_percent_str']} of {d['_total_bytes_str']}")
-
-@app.route("/video/<filename>")
-def serve_video(filename):
-    path = os.path.join(DOWNLOAD_DIR, filename)
-    if os.path.exists(path):
-        return send_file(path, as_attachment=True)
-    return jsonify({"error": "File not found"}), 404
+        return jsonify({"error": f"❌ An error occurred: {str(e)}"}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
