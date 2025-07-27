@@ -1,22 +1,10 @@
 FROM python:3.11-slim
 
-# Install dependencies
-RUN apt-get update && \
-    apt-get install -y ffmpeg && \
-    apt-get clean
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
+COPY . /app
 
-# Copy everything
-COPY . .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
-
-# Expose the port your app runs on
-EXPOSE 5000
-
-# Run your Flask app
-CMD ["python", "app.py"]
+CMD ["python", "server.py"]
