@@ -1,65 +1,53 @@
-from flask import Flask, render_template, request, jsonify, send_file
-import yt_dlp
+from flask import Flask, request, jsonify, send_file
+from yt_dlp import YoutubeDL
 import os
-import uuid
+from uuid import uuid4
 
 app = Flask(__name__)
 
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/download', methods=['POST'])
-def download():
-    data = request.json
-    url = data.get('url')
-
+@app.route("/download", methods=["POST"])
+def download_video():
+    data = request.get_json()
+    url = data.get("url")
     if not url:
-        return jsonify({'error': 'URL is required'}), 400
+        return jsonify({"error": "No URL provided"}), 400
 
-    video_id = str(uuid.uuid4())
-    output_path = os.path.join(DOWNLOAD_DIR, f'{video_id}.mp4')
-
-    ydl_opts = {
-        'format': 'best[ext=mp4]',
-        'outtmpl': output_path
-    }
+    uid = str(uuid4())
+    output_path = os.path.join(DOWNLOAD_DIR, f"{uid}.%(ext)s")
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-        return jsonify({'success': True, 'filename': output_path})
+        ydl_opts = {
+            "format": "mp4",
+            "outtmpl": output_path,
+            "noplaylist": True,
+            "quiet": True,
+            "progress_hooks": [progress_hook],
+        }
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+        return jsonify({
+            "title": info.get("title"),
+            "filename": filename,
+            "download_url": f"/video/{os.path.basename(filename)}",
+            "thumbnail": info.get("thumbnail"),
+        })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/preview', methods=['POST'])
-def preview():
-    data = request.json
-    url = data.get('url')
+def progress_hook(d):
+    if d['status'] == 'downloading':
+        print(f"Downloading: {d['_percent_str']} of {d['_total_bytes_str']}")
 
-    if not url:
-        return jsonify({'error': 'URL is required'}), 400
+@app.route("/video/<filename>")
+def serve_video(filename):
+    path = os.path.join(DOWNLOAD_DIR, filename)
+    if os.path.exists(path):
+        return send_file(path, as_attachment=True)
+    return jsonify({"error": "File not found"}), 404
 
-    try:
-        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-            info = ydl.extract_info(url, download=False)
-            return jsonify({
-                'title': info.get('title'),
-                'thumbnail': info.get('thumbnail'),
-                'uploader': info.get('uploader')
-            })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/download-file', methods=['GET'])
-def download_file():
-    file_path = request.args.get('file')
-    if os.path.exists(file_path):
-        return send_file(file_path, as_attachment=True)
-    return "File not found", 404
-
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
