@@ -1,42 +1,44 @@
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, jsonify, send_file
 import yt_dlp
 import os
 import uuid
 
 app = Flask(__name__)
 
-DOWNLOADS_DIR = "downloads"
-os.makedirs(DOWNLOADS_DIR, exist_ok=True)
-
-@app.route("/download")
-def download():
-    video_url = request.args.get("url")
-    if not video_url:
-        return jsonify({"error": "URL is required"}), 400
-
-    unique_id = str(uuid.uuid4())
-    output_path = os.path.join(DOWNLOADS_DIR, f"{unique_id}.mp4")
-
-    ydl_opts = {
-        'outtmpl': output_path,
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4',
-        'quiet': True,
-        'merge_output_format': 'mp4'
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
-    except Exception as e:
-        return jsonify({"error": f"Download failed: {str(e)}"}), 500
-
-    return send_file(output_path, as_attachment=True, download_name="video.mp4")
+DOWNLOAD_FOLDER = "downloads"
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 @app.route("/")
-def index():
-    return send_file("index.html")
+def home():
+    return "✅ YouTube Downloader is running."
+
+@app.route("/download", methods=["POST"])
+def download_video():
+    data = request.get_json()
+    url = data.get("url")
+
+    if not url or "youtube.com" not in url:
+        return jsonify({"error": "❌ Invalid YouTube URL"}), 400
+
+    try:
+        video_id = str(uuid.uuid4())
+        output_path = os.path.join(DOWNLOAD_FOLDER, f"{video_id}.mp4")
+
+        ydl_opts = {
+            'format': '18',  # medium quality mp4
+            'outtmpl': output_path,
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        return send_file(output_path, as_attachment=True)
+
+    except Exception as e:
+        print("Download error:", e)
+        return jsonify({"error": "❌ Failed to download video. Try another link."}), 500
 
 if __name__ == "__main__":
-    import sys
+    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=True, host="0.0.0.0", port=port)
