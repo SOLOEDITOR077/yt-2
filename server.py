@@ -11,8 +11,9 @@ def home():
     return "✅ Flask YouTube Downloader Backend is Live!"
 
 # Download video route
-@app.route("/download", methods=["POST"])
-def download_video():
+@app.route('/')
+def home():
+    return "Flask YouTube Downloader Backend is Live!"
     try:
         data = request.get_json()
         url = data.get("url")
